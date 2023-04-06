@@ -13,7 +13,7 @@ class TestMetric:
                              zip(Subset(pytest.dataset, np.arange(10)),
                                  Subset(pytest.dataset, np.arange(10))))
     def test_DiffFgDICE_true(self, pred, label):
-        answer = DiffFgDICE(pred['sem'], label['sem'])
+        answer = DiffFgDICE(pred[1], label[1])
         assert_close(answer, 1.)
 
     def test_DiffFgDICE_false_full(self):
@@ -24,14 +24,14 @@ class TestMetric:
                              zip(Subset(pytest.dataset, np.arange(10)),
                                  Subset(pytest.dataset, np.arange(10))))
     def test_DiffFgDICE_real(self, pred, label):
-        answer = DiffFgDICE(pred['sem'].max() - pred['sem'], label['sem'])
+        answer = DiffFgDICE(pred[1].max() - pred[1], label[1])
         assert_close(answer, 0)
 
     @pytest.mark.parametrize('pred,label',
                              zip(Subset(pytest.dataset, np.arange(10)),
                                  Subset(pytest.dataset, np.arange(10))))
     def test_DiffFgMSE_true(self, pred, label):
-        answer = DiffFgMSE(pred['sem'], label['sem'])
+        answer = DiffFgMSE(pred[1], label[1])
         assert_close(answer, 0.)
 
     def test_DiffFgMSE_false_full(self):
@@ -42,5 +42,5 @@ class TestMetric:
                              zip(Subset(pytest.dataset, np.arange(10)),
                                  Subset(pytest.dataset, np.arange(10))))
     def test_DiffFgMSE_real(self, pred, label):
-        answer = DiffFgMSE(pred['sem'].max() - pred['sem'], label['sem'])
+        answer = DiffFgMSE(pred[1].max() - pred[1], label[1])
         assert answer > 1

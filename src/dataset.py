@@ -10,7 +10,10 @@ from torch.utils.data import Dataset
 
 
 class LSCPlantsDataset(Dataset):
-    transformer = transforms.ToTensor()
+    transformer = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Lambda(lambda x: x[:3])
+    ])
 
     def __init__(self, path: str, split_path: str) -> None:
         self.datasets = []
