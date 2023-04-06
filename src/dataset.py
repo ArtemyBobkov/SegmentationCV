@@ -1,4 +1,5 @@
 import os
+from typing import Tuple, List, Any, Dict
 
 import pandas as pd
 import torch
@@ -6,54 +7,71 @@ import torch
 from torchvision import transforms
 from PIL import Image
 from torch.utils.data import Dataset
-from os import listdir
 
 
 class LSCPlantsDataset(Dataset):
-    def __init__(self, path: str) -> None:
-        self.filepaths = []
-        self.img = []
-        self.sem = []
-        self.inst = []
-        self.leaves = []
-        for i in range(1, 5):
-            for file in listdir(os.path.join(path, f'A{i}')):
-                full_name = os.path.join(path, f'A{i}', file)
-                if file.endswith('.csv'):
-                    df = pd.read_csv(full_name)
-                    self.filepaths.extend(map(lambda t: os.path.join(path, f'A{i}', t), df[0].tolist()))
-                    self.leaves.extend(df[1].tolist())
-                elif full_name.count('rgb') > 0:
-                    self.img.append(transforms.ToTensor()(Image.open(full_name)))
-                elif full_name.count('fg') > 0:
-                    self.sem.append(transforms.ToTensor()(Image.open(full_name)))
-                elif full_name.count('label') > 0:
-                    self.inst.append(transforms.ToTensor()(Image.open(full_name)))
-                else:
-                    raise KeyError(f'File {full_name} does not match any conditions!')
+    transformer = transforms.ToTensor()
 
-    def __getitem__(self, index: int):
-        return {'path': self.filepaths[index],
-                'img': self.img[index],
-                'sem': self.sem[index],
-                'inst': self.inst[index],
-                'leaves': self.leaves[index]}
+    def __init__(self, path: str, split_path: str) -> None:
+        self.datasets = []
+        for i in range(1, 5):
+            self.datasets.append(pd.read_csv(os.path.join(path, f'A{i}', f'A{i}.csv'),
+                                             names=['img', 'leaves']))
+        self.train, self.dev, self.test = self.make_split_(path, split_path)
+
+    def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
+        raise NotImplementedError('Should not be called, use get_train, get_dev and get_test functions instead')
 
     def __len__(self) -> int:
-        if len(self.filepaths) == len(self.img) == len(self.sem) == \
-                len(self.inst) == len(self.leaves):
-            return len(self.filepaths)
-        else:
-            raise AssertionError('Sizes of all lists does not match')
+        total_length = 0
+        for dataset in self.datasets:
+            total_length += len(dataset)
+        return total_length
 
-    def make_split(self, split_path, rel_path):
+    def get_train(self) -> Dataset:
+        return LSCPlantsDatasetSplit(self, 'train')
+
+    def get_dev(self) -> Dataset:
+        return LSCPlantsDatasetSplit(self, 'dev')
+
+    def get_test(self) -> Dataset:
+        return LSCPlantsDatasetSplit(self, 'test')
+
+    def make_split_(self, rel_path: str, split_path: str) -> Tuple[List[Any], List[Any], List[Any]]:
         split = pd.read_csv(split_path)
         split.split[split.split == 'train'] = 0
         split.split[split.split == 'dev'] = 1
         split.split[split.split == 'test'] = 2
+        split = split.replace('data/', '', regex=True)
 
-        data_split = [[], [], []]
-        for row in split:
-            ind = self.filepaths.index(os.path.join(rel_path, row['img_path']))
-            data_split[row['split']].append([self.img[ind], self.sem[ind], self.inst[ind], self.leaves[ind]])
+        data_split = ([], [], [])
+        for row in split.iterrows():
+            img_path = os.path.join(rel_path, row[1]['img_path'])
+            folder_index = int(os.path.dirname(img_path)[-1]) - 1
+            _, img_name = os.path.split(img_path)
+            df = self.datasets[folder_index]
+            data_split[row[1]['split']].append({
+                'img': img_path,
+                'sem': os.path.join(rel_path, row[1]['sem_path']),
+                'inst': os.path.join(rel_path, row[1]['inst_path']),
+                'leaves': df.loc[df.img == img_name].leaves.item()}
+            )
         return data_split
+
+
+class LSCPlantsDatasetSplit(Dataset):
+    def __init__(self, dataset: LSCPlantsDataset, mode):
+        mapping = {'train': dataset.train, 'dev': dataset.dev, 'test': dataset.test}
+        if mode in mapping:
+            self.data = mapping[mode]
+        else:
+            raise ValueError('Wrong argument!')
+
+    def __getitem__(self, index):
+        img = LSCPlantsDataset.transformer((Image.open(self.data[index]['img']).crop((0, 30, 500, 530))))
+        sem = LSCPlantsDataset.transformer(Image.open(self.data[index]['sem']).crop((0, 30, 500, 530)))
+        inst = LSCPlantsDataset.transformer(Image.open(self.data[index]['inst']).crop((0, 30, 500, 530)))
+        return img, sem, inst, self.data[index]['leaves']
+
+    def __len__(self):
+        return len(self.data)
