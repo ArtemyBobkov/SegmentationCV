@@ -8,7 +8,7 @@ from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torchvision.models import resnet18
 from torchvision.transforms import CenterCrop, Resize
 
-from metrics import DiffFgDICE
+from metrics import DiffFgDICE, DiffFgMSE
 from matplotlib import pyplot as plt
 
 
@@ -25,6 +25,10 @@ class UNetModel(pl.LightningModule):
         self.upsample = torch.nn.Upsample(scale_factor=2, mode='bilinear')
         self.construct_decoder()
         self.step = 0
+        self.dice = 0
+        self.mse = 0
+        self.test_count = 0
+        self.save_hyperparameters(logger=False)
 
     def construct_encoder(self):
         self.conv_enc0 = torch.nn.Conv2d(3, 64, 1)
@@ -80,17 +84,34 @@ class UNetModel(pl.LightningModule):
         return loss
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
-        print('eheh')
         x, y, _, _ = batch
         x = UNetModel.transformer(x)
         y = UNetModel.transformer(y)
         y_hat = self(x)
         dices = []
-        for pred in y_hat:
-            dices.append(DiffFgDICE(pred, y).item())
-        self.visualize_test_result(y_hat, x, dices)
+        for pred, true in zip(y_hat, y):
+            dices.append(DiffFgDICE(pred, true).item())
+            self.dice += DiffFgDICE(pred, true).item()
+            self.mse += DiffFgMSE(pred, true).item()
+            self.test_count += 1
+        self.visualize_test_result(y_hat, x, dices, batch_idx)
+        print(self.dice / self.test_count)
+        print(self.mse / self.test_count)
         return y_hat
 
+    def validation_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        x, y, _, _ = batch
+        x = UNetModel.transformer(x)
+        y = UNetModel.transformer(y)
+        y_hat = self(x)
+        dices = []
+        for pred, true in zip(y_hat, y):
+            dices.append(DiffFgDICE(pred, true).item())
+            self.dice += DiffFgDICE(pred, true).item()
+            self.test_count += 1
+        self.visualize_test_result(y_hat, y, dices)
+        print(self.dice / self.test_count)
+        return y_hat
 
     def configure_optimizers(self, optimizer=torch.optim.Adam, lr=3e-4):
         return optimizer(self.parameters(), lr=lr)
@@ -122,16 +143,21 @@ class UNetModel(pl.LightningModule):
         axis[1].imshow(y.detach().cpu()[0].permute((1, 2, 0)))
         plt.show()
 
-    def visualize_test_result(self, y_hat, x, metrics):
+    def visualize_test_result(self, y_hat, x, metrics, batch_idx=0):
         y_hat = y_hat.detach().cpu()
         x = x.detach().cpu()
-        fig, axis = plt.subplots(y_hat.shape[0] // 2, 4, figsize=(24, 6 * (y_hat.shape[0] // 2)))
 
-        for i in range(y_hat.shape[0]):
-            if i % 2 == 1:
-                axis[i // 4, i % 4].imshow(x[i // 2].permute(1, 2, 0))
-                axis.set_title(f'Predicted segments, score = {metrics[i]}')
-            else:
-                axis[i // 4, i % 4].imshow(y_hat[i // 2].permute(1, 2, 0))
-                axis.set_title('Real image')
-        plt.show()
+        for j in range(max(1, y_hat.shape[0] // 2)):
+            fig, axis = plt.subplots(1, 4, figsize=(24, 6))
+            y_show = y_hat[j:j + 2]
+            x_show = x[j:j + 2]
+            metrics_show = metrics[j:j + 2]
+            for i in range(4):
+                if i % 2 == 1:
+                    axis[i].imshow(y_show[i // 2].permute(1, 2, 0))
+                    axis[i].set_title(f'Predicted segments, score = {metrics_show[i // 2]}')
+                else:
+                    axis[i].imshow(x_show[i // 2].permute(1, 2, 0))
+                    axis[i].set_title('Real image')
+            plt.savefig(f'../test_results/{batch_idx}_{j}.png', dpi=800)
+            plt.show()
