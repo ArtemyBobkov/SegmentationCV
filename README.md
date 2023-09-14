@@ -1,6 +1,6 @@
 # sd23-cv1-segmentation
-Условие: https://drive.google.com/drive/folders/1Nt2poG8rctwWeUfycSSNURe8ryIkMKJc
 
+Задача - семантическая сегментация листьев комнатных растений.
 Применялась ванильная UNet с backbone - resnet18. Суммарно 6 эпох на предоставленном датасете.
 
 Ссылка на результаты inference: в папке test_results лежат все полученные тестовые изображения.
